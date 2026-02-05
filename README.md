@@ -20,3 +20,17 @@ Gemini와 GPT(Codex)의 코딩 성능 및 성향 확인용 프로젝트
 
 1. 코드 실행 시, 처음 요청에 따라 적절하게 바로 생성
 2. 코드 생성 속도는 약간 빠름
+
+### 2차 결과
+
+- Codex
+
+<img width="992" height="696" alt="image" src="https://github.com/user-attachments/assets/e5475cd8-19f3-4193-9aae-86b43b8a63ae" />
+
+코드 생성 속도 약간 느림
+
+- Gemini
+
+<img width="1226" height="891" alt="image" src="https://github.com/user-attachments/assets/da4e477e-40ac-4fd0-9e72-8b6df1d92d73" />
+
+1. 코드 생성 속도 중간

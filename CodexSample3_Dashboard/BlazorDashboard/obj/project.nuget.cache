@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "UPobFwrWtZ8=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\HONG\\Desktop\\Github\\Gemini-vs-GPT\\CodexSample3_Dashboard\\BlazorDashboard\\BlazorDashboard.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\HONG\\.nuget\\packages\\microsoft.aspnetcore.app.internal.assets\\10.0.3\\microsoft.aspnetcore.app.internal.assets.10.0.3.nupkg.sha512"
+  ],
+  "logs": []
+}

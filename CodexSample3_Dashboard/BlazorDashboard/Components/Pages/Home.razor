@@ -1,0 +1,360 @@
+@page "/"
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@using BlazorDashboard.Models
+@using BlazorDashboard.Services
+@inject SampleDashboardDataService DashboardDataService
+@inject IJSRuntime JS
+
+<PageTitle>Dashboard</PageTitle>
+
+<div id="dashboard-fit-root" class="dashboard-fit-root">
+    <div id="dashboard-fit-canvas" class="dashboard-fit-canvas">
+        <div class="dashboard-header">
+            <div>
+                <h1>스마트 팩토리 대시보드</h1>
+                <p class="dashboard-subtitle">월간 생산 실적과 운영 지표를 한 화면에서 확인합니다.</p>
+            </div>
+            <div class="dashboard-meta">
+                <span class="dashboard-date">@DateTime.Now.ToString("yyyy.MM.dd HH:mm")</span>
+                <span class="dashboard-chip">남은 에러 @Snapshot.ErrorStatus.OpenErrorCount.ToString("N0")건</span>
+            </div>
+        </div>
+
+        <section class="metric-grid">
+            @foreach (var metric in Snapshot.Metrics)
+            {
+                <article class="metric-card">
+                    <p class="metric-label">@metric.Label</p>
+                    <p class="metric-value">@metric.Value</p>
+                    <p class="@($"metric-delta {(metric.IsPositive ? "up" : "down")}")">@metric.Delta</p>
+                </article>
+            }
+        </section>
+
+        <section class="error-overview">
+            <article class="@($"error-card {(HoveredErrorCard == 0 ? "hovered" : string.Empty)}")"
+                     @onmouseenter="(() => HoveredErrorCard = 0)"
+                     @onmouseleave="ClearErrorHover">
+                <p>에러율</p>
+                <strong>@Snapshot.ErrorStatus.ErrorRatePercent.ToString("0.0")%</strong>
+                @if (HoveredErrorCard == 0)
+                {
+                    <span class="error-hover-note">이번 달 에러 @Snapshot.ErrorStatus.ErrorCountThisMonth.ToString("N0")건 / 잔여 @Snapshot.ErrorStatus.OpenErrorCount.ToString("N0")건</span>
+                }
+            </article>
+            <article class="@($"error-card {(HoveredErrorCard == 1 ? "hovered" : string.Empty)}")"
+                     @onmouseenter="(() => HoveredErrorCard = 1)"
+                     @onmouseleave="ClearErrorHover">
+                <p>이번 달 에러 발생</p>
+                <strong>@Snapshot.ErrorStatus.ErrorCountThisMonth.ToString("N0")건</strong>
+                @if (HoveredErrorCard == 1)
+                {
+                    <span class="error-hover-note">일 평균 @Math.Round(Snapshot.ErrorStatus.ErrorCountThisMonth / 30.0, 1)건 발생</span>
+                }
+            </article>
+            <article class="@($"error-card {(HoveredErrorCard == 2 ? "hovered" : string.Empty)}")"
+                     @onmouseenter="(() => HoveredErrorCard = 2)"
+                     @onmouseleave="ClearErrorHover">
+                <p>현재 남은 에러</p>
+                <strong>@Snapshot.ErrorStatus.OpenErrorCount.ToString("N0")건</strong>
+                @if (HoveredErrorCard == 2)
+                {
+                    <span class="error-hover-note">우선 처리 필요 항목 @Math.Max(1, Snapshot.ErrorStatus.OpenErrorCount / 3)건</span>
+                }
+            </article>
+        </section>
+
+        <section class="panel-grid">
+            <article class="panel panel-strong">
+                <div class="panel-head">
+                    <h2>월간 생산 실적</h2>
+                    <span class="panel-caption">단위: 천개</span>
+                </div>
+                <svg class="trend-chart" viewBox="0 0 620 220" preserveAspectRatio="none" role="img" aria-label="월간 생산 실적 차트">
+                    <line x1="0" y1="175" x2="620" y2="175" class="chart-grid"></line>
+                    <line x1="0" y1="125" x2="620" y2="125" class="chart-grid"></line>
+                    <line x1="0" y1="75" x2="620" y2="75" class="chart-grid"></line>
+                    <polygon class="trend-area" points="@TrendAreaPoints"></polygon>
+                    <polyline class="trend-line" points="@TrendPoints"></polyline>
+                    @foreach (var zone in TrendHoverZones)
+                    {
+                        <rect x="@zone.X" y="0" width="@zone.Width" height="220" class="trend-hover-zone"
+                              @onmouseenter="(() => OnTrendPointHover(zone.Index))"
+                              @onmouseleave="ClearTrendHover">
+                            <title>@($"{zone.Label}: {zone.Value:N0}k")</title>
+                        </rect>
+                    }
+                    @foreach (var point in TrendDots)
+                    {
+                        <circle cx="@point.X" cy="@point.Y" r="@(HoveredTrendIndex == point.Index ? 5.2 : 3.6)" class="@($"trend-dot {(HoveredTrendIndex == point.Index ? "active" : string.Empty)}")"
+                                aria-label="@($"{point.Label} 실제 수치 {point.Value:N0}k")"
+                                @onmouseenter="(() => OnTrendPointHover(point.Index))"
+                                @onmouseleave="ClearTrendHover">
+                            <title>@($"{point.Label}: {point.Value:N0}k")</title>
+                        </circle>
+                    }
+                    @if (HoveredTrendIndex is int i)
+                    {
+                        var hovered = TrendDots[i];
+                        var tipX = Math.Clamp(hovered.X - 52, 8, 506);
+                        var tipY = Math.Clamp(hovered.Y - 52, 8, 170);
+                        <g class="trend-tooltip">
+                            <rect x="@tipX" y="@tipY" width="104" height="36" rx="7"></rect>
+                            <text x="@(tipX + 8)" y="@(tipY + 15)" class="trend-tooltip-label">@hovered.Label</text>
+                            <text x="@(tipX + 8)" y="@(tipY + 29)" class="trend-tooltip-value">@($"{hovered.Value:N0}k")</text>
+                        </g>
+                    }
+                </svg>
+                <div class="trend-labels">
+                    @foreach (var point in Snapshot.MonthlyProduction)
+                    {
+                        <span>@point.Label</span>
+                    }
+                </div>
+                <div class="trend-footnote">
+                    <span>최근 생산량</span>
+                    <strong>@LastProduction.ToString("N0")k</strong>
+                </div>
+            </article>
+
+            <article class="panel ai-panel">
+                <div class="panel-head">
+                    <h2>AI 에러 분석</h2>
+                    <span class="ai-badge">@Snapshot.AiInsight.Status</span>
+                </div>
+                <p class="ai-summary">@Snapshot.AiInsight.Summary</p>
+
+                <div class="ai-cause">
+                    <span>추정 원인</span>
+                    <strong>@Snapshot.AiInsight.RootCause</strong>
+                </div>
+
+                <div class="ai-confidence">
+                    <span>신뢰도 @Snapshot.AiInsight.ConfidencePercent%</span>
+                    <div class="ai-track">
+                        <div class="ai-fill" style="@($"width: {Snapshot.AiInsight.ConfidencePercent}%")"></div>
+                    </div>
+                </div>
+
+                <div class="ai-list-wrap">
+                    <h3>근거 데이터</h3>
+                    <ul class="ai-list">
+                        @foreach (var item in Snapshot.AiInsight.Evidence)
+                        {
+                            <li>@item</li>
+                        }
+                    </ul>
+                </div>
+
+                <div class="ai-list-wrap">
+                    <h3>권장 해결책</h3>
+                    <ul class="ai-list">
+                        @foreach (var action in Snapshot.AiInsight.Actions)
+                        {
+                            <li>@action</li>
+                        }
+                    </ul>
+                </div>
+            </article>
+        </section>
+
+        <section class="panel-grid">
+            <article class="panel">
+                <h2>채널별 매출 달성률</h2>
+                @foreach (var item in Snapshot.RevenueByChannel)
+                {
+                    var percent = Math.Min(100, item.RevenueKrwInThousands * 100 / item.GoalKrwInThousands);
+                    <div class="bar-row">
+                        <div class="bar-label-row">
+                            <span>@item.Channel</span>
+                            <span>@percent%</span>
+                        </div>
+                        <div class="bar-track">
+                            <div class="bar-fill" style="@($"width: {percent}%")"></div>
+                        </div>
+                        <small>₩@item.RevenueKrwInThousands.ToString("N0")k / 목표 ₩@item.GoalKrwInThousands.ToString("N0")k</small>
+                    </div>
+                }
+            </article>
+
+            <article class="panel">
+                <h2>전환 퍼널 비율</h2>
+                <div class="donut-wrap">
+                    <div class="donut" style="@($"background: {DonutGradient};")">
+                        <span class="donut-center">100%</span>
+                    </div>
+                    <ul class="legend">
+                        @foreach (var segment in Snapshot.ConversionFunnel)
+                        {
+                            <li>
+                                <span class="swatch" style="@($"background:{segment.ColorHex}")"></span>
+                                <span>@segment.Label</span>
+                                <strong>@segment.Percent%</strong>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </article>
+        </section>
+
+        <section class="panel">
+            <h2>최근 활동</h2>
+            <ul class="activity-list">
+                @foreach (var activity in Snapshot.RecentActivities)
+                {
+                    <li>
+                        <span class="activity-time">@activity.Time</span>
+                        <span class="activity-desc">@activity.Description</span>
+                        <span class="activity-tag">@activity.Tag</span>
+                    </li>
+                }
+            </ul>
+        </section>
+
+        <section class="panel">
+            <h2>팀 진행 현황</h2>
+            <table class="status-table">
+                <thead>
+                    <tr>
+                        <th>팀</th>
+                        <th>진행률</th>
+                        <th>오픈 태스크</th>
+                        <th>오너</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var status in Snapshot.TeamStatuses)
+                    {
+                        <tr>
+                            <td>@status.Team</td>
+                            <td>
+                                <div class="mini-track">
+                                    <div class="mini-fill" style="@($"width: {status.ProgressPercent}%")"></div>
+                                </div>
+                                <span>@status.ProgressPercent%</span>
+                            </td>
+                            <td>@status.OpenTasks</td>
+                            <td>@status.Owner</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    </div>
+</div>
+
+@code {
+    private const string RootId = "dashboard-fit-root";
+    private const string CanvasId = "dashboard-fit-canvas";
+    private const int CanvasWidth = 1180;
+    private const int CanvasHeight = 1060;
+
+    private DashboardSnapshot Snapshot = default!;
+    private string TrendPoints = string.Empty;
+    private string TrendAreaPoints = string.Empty;
+    private List<TrendDotInfo> TrendDots = [];
+    private List<TrendHoverZoneInfo> TrendHoverZones = [];
+    private string DonutGradient = string.Empty;
+    private int LastProduction;
+    private int? HoveredErrorCard;
+    private int? HoveredTrendIndex;
+    private IJSObjectReference? _fitModule;
+
+    protected override void OnInitialized()
+    {
+        Snapshot = DashboardDataService.GetSnapshot();
+        BuildTrendChart();
+        BuildDonutChart();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _fitModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/dashboard-fit.js");
+        await _fitModule.InvokeVoidAsync("initDashboardFit", RootId, CanvasId, CanvasWidth, CanvasHeight);
+    }
+
+    private void BuildTrendChart()
+    {
+        var values = Snapshot.MonthlyProduction.Select(x => x.Value).ToList();
+        var min = values.Min();
+        var max = values.Max();
+        var count = values.Count;
+        var stepX = count > 1 ? 600.0 / (count - 1) : 0;
+        var points = new List<string>(count);
+        TrendDots.Clear();
+        TrendHoverZones.Clear();
+
+        for (var i = 0; i < count; i++)
+        {
+            var normalized = max == min ? 0.5 : (values[i] - min) / (double)(max - min);
+            var x = 10 + (i * stepX);
+            var y = 190 - (normalized * 150);
+            points.Add($"{x:0.##},{y:0.##}");
+            TrendDots.Add(new TrendDotInfo(i, x, y, Snapshot.MonthlyProduction[i].Label, values[i]));
+
+            var zoneStart = i == 0 ? 0 : (x + TrendDots[i - 1].X) / 2;
+            var zoneEnd = i == count - 1 ? 620 : x + (stepX / 2);
+            TrendHoverZones.Add(new TrendHoverZoneInfo(i, zoneStart, Math.Max(1, zoneEnd - zoneStart), Snapshot.MonthlyProduction[i].Label, values[i]));
+        }
+
+        LastProduction = values[^1];
+        TrendPoints = string.Join(" ", points);
+        TrendAreaPoints = $"10,190 {TrendPoints} 610,190";
+    }
+
+    private void BuildDonutChart()
+    {
+        var segments = new List<string>();
+        var start = 0;
+        foreach (var item in Snapshot.ConversionFunnel)
+        {
+            var end = start + item.Percent;
+            segments.Add($"{item.ColorHex} {start}% {end}%");
+            start = end;
+        }
+
+        DonutGradient = $"conic-gradient({string.Join(", ", segments)})";
+    }
+
+    private void OnTrendPointHover(int index)
+    {
+        HoveredTrendIndex = index;
+    }
+
+    private void ClearTrendHover()
+    {
+        HoveredTrendIndex = null;
+    }
+
+    private void ClearErrorHover()
+    {
+        HoveredErrorCard = null;
+    }
+
+    private sealed record TrendDotInfo(int Index, double X, double Y, string Label, int Value);
+    private sealed record TrendHoverZoneInfo(int Index, double X, double Width, string Label, int Value);
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_fitModule is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _fitModule.InvokeVoidAsync("disposeDashboardFit", RootId);
+            await _fitModule.DisposeAsync();
+        }
+        catch
+        {
+            // Ignore cleanup errors during navigation or shutdown.
+        }
+    }
+}
